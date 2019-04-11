@@ -4,34 +4,42 @@ import datetime
 import pandas as pd
 
 
-@click.group()
+@click.group(invoke_without_command=True)
 @click.pass_context
 def cli(ctx):
+    """Track your money every month"""
     ctx.obj = Ledger()
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.obj.to_string())
 
 
 @cli.command()
-@click.option('-c', '--category', default="Income")
+@click.option('-c', '--category', default="Income", help="Category of the income.")
 @click.argument('amount', type=click.FLOAT)
 @click.pass_context
 def deposit(ctx, amount, category):
+    """Record income amount."""
     description = click.prompt('Enter description', default="None")
     ctx.obj.deposit(amount, description, category)
+    click.echo("Successfully deposited K{} into {}.".format(amount, category))
 
 
 @cli.command()
-@click.option('-c', '--category', default="Expense")
+@click.option('-c', '--category', default="Expense", help="Category of the expense.")
 @click.argument('amount', type=click.FLOAT)
 @click.pass_context
 def withdraw(ctx, amount, category):
+    """Record expense amount"""
     description = click.prompt('Enter description', default="None")
     ctx.obj.withdraw(amount, description, category)
+    click.echo("Withdrawn K{} for {}.".format(amount, category))
 
 
 @cli.command()
 @click.argument('ledger_id', type=click.INT)
 @click.pass_context
 def edit(ctx, ledger_id):
+    """Edit an entry using it's ID."""
     entry = ctx.obj.select_entry(ledger_id)
     amount = 0
     click.echo(entry.date)
@@ -42,19 +50,27 @@ def edit(ctx, ledger_id):
     description = click.prompt('Description', default=entry.description)
     category = click.prompt('Category', default=entry["category"])
     ctx.obj.edit_entry(ledger_id, amount, description, category)
+    click.echo("\nSuccessfully edited")
+    click.echo(ctx.obj.select_entry(ledger_id))
 
 
 @cli.command()
 @click.argument('ledger_id', type=click.INT)
+@click.confirmation_option(prompt='Are you sure you want to delete this entry')
 @click.pass_context
 def delete(ctx, ledger_id):
+    """Delete an entry using it's ID"""
     ctx.obj.delete_entry(ledger_id)
+    click.echo("Deleted entry {}".format(ledger_id))
 
 
 @cli.command()
+@click.option('-v', '--verbose', is_flag=True, help="Get more detailed transaction info")
 @click.pass_context
-def display(ctx):
-    click.echo(ctx.obj.display())
+def display(ctx, verbose):
+    """Display the transactions and summary."""
+    click.echo(ctx.obj.to_string())
+    click.echo(ctx.obj.display(verbose))
 
 
 class Ledger:
@@ -110,8 +126,21 @@ class Ledger:
             self.ledger = self.ledger.drop(self.ledger.index[int(ledger_id)])
             self.save()
 
-    def display(self):
-        return self.ledger
+    def get_total_income(self):
+        return self.ledger['deposit'].sum()
+
+    def get_total_expense(self):
+        return self.ledger['withdrawal'].sum()
+
+    def to_string(self):
+        total = self.get_total_income() - self.get_total_expense()
+
+        return 'Balance: K{0} \nIncomes: K{1}\tExpenses: K{2}'.format(total, self.get_total_income(), self.get_total_expense())
+
+    def display(self, verbose):
+        if verbose:
+            return self.ledger
+        return self.ledger.tail()
 
     def save(self):
         # Add index=False to stop dataframe from creating an unnamed column when saving to csv
